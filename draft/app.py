@@ -41,31 +41,34 @@ def app_js():
     package_dir = Path(__file__).parent
     return send_from_directory(str(package_dir), 'app.js')
 
-@app.route('/images/<filename>')
-def serve_image(filename):
-    """Serve images from shared images folder"""
+@app.route('/images/<document_name>/<filename>')
+def serve_image(document_name, filename):
+    """Serve images from per-document folders (Quarto blog convention)"""
     try:
-        logger.info(f"Image request: {filename}")
+        logger.info(f"Image request: {document_name}/{filename}")
 
-        # Get write folder
-        write_folder = app.config.get('WRITE_FOLDER')
-        if not write_folder:
-            logger.error("Write folder not configured")
-            return "Server not configured", 500
+        # Validate document name
+        sanitized_name = sanitize_document_name(document_name)
+        if not sanitized_name:
+            logger.error(f"Invalid document name: {document_name}")
+            return "Invalid document name", 400
 
-        images_folder = write_folder / "images"
-        if not images_folder.exists():
-            logger.error(f"Images folder not found: {images_folder}")
-            return "Images folder not found", 404
+        # Get document folder
+        doc_folder = get_document_folder(document_name)
+        logger.info(f"Looking for image in: {doc_folder}")
+
+        if not doc_folder.exists():
+            logger.error(f"Document folder not found: {doc_folder}")
+            return "Document folder not found", 404
 
         # Check if file exists
-        file_path = images_folder / filename
+        file_path = doc_folder / filename
         if not file_path.exists():
             logger.error(f"Image file not found: {file_path}")
             return "Image file not found", 404
 
         logger.info(f"Serving image: {file_path}")
-        return send_from_directory(str(images_folder), filename)
+        return send_from_directory(str(doc_folder), filename)
 
     except Exception as e:
         logger.error(f"Error serving image: {e}")
@@ -224,15 +227,27 @@ def sanitize_document_name(name: str) -> str:
     """Sanitize document name for use as folder/file name"""
     if not name or not name.strip():
         return None
-    
+
     # Remove/replace problematic characters
     import re
     sanitized = re.sub(r'[<>:"/\\|?*]', '-', name.strip())
     sanitized = re.sub(r'\s+', '-', sanitized)  # Replace spaces with hyphens
     sanitized = sanitized.strip('-')  # Remove leading/trailing hyphens
     sanitized = sanitized.lower()  # Convert to lowercase for nice URLs
-    
+
     return sanitized if sanitized else None
+
+def get_document_folder(document_name: str) -> Path:
+    """Get the folder path for a document (Quarto blog convention)"""
+    write_folder = app.config.get('WRITE_FOLDER')
+    if not write_folder:
+        raise ValueError("Write folder not configured")
+
+    sanitized_name = sanitize_document_name(document_name)
+    if not sanitized_name:
+        raise ValueError("Invalid document name")
+
+    return write_folder / sanitized_name
 
 def create_frontmatter_content(title: str, content: str, description: str = "") -> str:
     """Create Quarto-compatible content with frontmatter"""
@@ -277,10 +292,23 @@ def validate_document_name():
 
 @app.route('/api/upload-image', methods=['POST'])
 def upload_image():
-    """Upload image to shared images folder and return markdown syntax"""
+    """Upload image to per-document folder and return markdown syntax (Quarto convention)"""
     try:
         logger.info(f"Upload request received - Content-Type: {request.content_type}")
+        logger.info(f"Form data: {list(request.form.keys())}")
         logger.info(f"Files: {list(request.files.keys())}")
+
+        # Check if document name is provided
+        document_name = request.form.get('documentName', '').strip()
+        logger.info(f"Document name: '{document_name}'")
+        if not document_name:
+            return jsonify({'error': 'Document name is required'}), 400
+
+        # Validate document name
+        sanitized_name = sanitize_document_name(document_name)
+        logger.info(f"Sanitized name: '{sanitized_name}'")
+        if not sanitized_name:
+            return jsonify({'error': 'Invalid document name'}), 400
 
         # Check if file is present
         if 'file' not in request.files:
@@ -298,33 +326,30 @@ def upload_image():
         if file_ext not in allowed_extensions:
             return jsonify({'error': f'Unsupported file type: {file_ext}'}), 400
 
-        # Get write folder and create images subfolder
-        write_folder = app.config.get('WRITE_FOLDER')
-        if not write_folder:
-            return jsonify({'error': 'Write folder not configured'}), 500
-
-        images_folder = write_folder / "images"
-        images_folder.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Images folder: {images_folder}")
+        # Get document folder and create if needed
+        doc_folder = get_document_folder(document_name)
+        logger.info(f"Document folder: {doc_folder}")
+        doc_folder.mkdir(parents=True, exist_ok=True)
 
         # Generate unique filename with UUID
         unique_filename = f"{uuid.uuid4()}{file_ext}"
-        file_path = images_folder / unique_filename
+        file_path = doc_folder / unique_filename
         logger.info(f"Saving to: {file_path}")
 
         # Save the file
         file.save(str(file_path))
         logger.info(f"Successfully saved image: {file_path}")
 
-        # Return standard markdown image syntax
-        image_markdown = f"![](images/{unique_filename})"
+        # Return markdown with relative path (image in same folder as index.qmd)
+        image_markdown = f"![]({unique_filename})"
         logger.info(f"Generated markdown: {image_markdown}")
 
         response_data = {
             'success': True,
             'filename': unique_filename,
             'markdown': image_markdown,
-            'path': str(file_path)
+            'path': str(file_path),
+            'document_name': sanitized_name
         }
         logger.info(f"Returning response: {response_data}")
         return jsonify(response_data)
@@ -338,7 +363,7 @@ def upload_image():
 
 @app.route('/api/save-document', methods=['POST'])
 def save_document():
-    """Save document as flat .qmd file with frontmatter"""
+    """Save document as folder/index.qmd (Quarto blog convention)"""
     try:
         data = request.get_json()
         document_name = data.get('documentName', '').strip()
@@ -348,19 +373,13 @@ def save_document():
         if not document_name:
             return jsonify({'error': 'Document name is required'}), 400
 
-        # Validate document name
-        sanitized_name = sanitize_document_name(document_name)
-        if not sanitized_name:
-            return jsonify({'error': 'Invalid document name'}), 400
+        # Validate and get document folder
+        doc_folder = get_document_folder(document_name)
+        doc_folder.mkdir(parents=True, exist_ok=True)
 
-        # Get write folder
-        write_folder = app.config.get('WRITE_FOLDER')
-        if not write_folder:
-            return jsonify({'error': 'Write folder not configured'}), 500
-
-        # Create Quarto file with frontmatter - save as flat .qmd file
+        # Create Quarto file with frontmatter - save as index.qmd in document folder
         markdown_content = create_frontmatter_content(document_name, content, description)
-        file_path = write_folder / f"{sanitized_name}.qmd"
+        file_path = doc_folder / "index.qmd"
 
         file_path.write_text(markdown_content, encoding='utf-8')
 
@@ -369,7 +388,7 @@ def save_document():
         return jsonify({
             'success': True,
             'path': str(file_path),
-            'filename': f"{sanitized_name}.qmd"
+            'folder': str(doc_folder)
         })
 
     except Exception as e:

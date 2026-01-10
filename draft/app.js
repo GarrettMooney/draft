@@ -358,11 +358,14 @@ function updatePreview() {
         let html = marked.parse(markdownText);
 
         // Convert relative image paths to Flask-served paths for preview
-        // Images are stored in shared images/ folder
-        html = html.replace(
-            /src="images\/([^"]+\.(png|jpg|jpeg|gif|webp))"/g,
-            `src="/images/$1"`
-        );
+        // Images are stored in per-document folders (Quarto convention)
+        const docName = documentName.value.trim();
+        if (docName) {
+            html = html.replace(
+                /src="([^"\/]+\.(png|jpg|jpeg|gif|webp))"/g,
+                `src="/images/${encodeURIComponent(docName)}/$1"`
+            );
+        }
 
         preview.innerHTML = html;
         if (window.renderMathInElement) {
@@ -436,9 +439,16 @@ function setupDragAndDrop() {
 }
 
 async function uploadImage(file) {
+    const docName = documentName.value.trim();
+    if (!docName) {
+        alert('Please enter a document name before uploading images');
+        return;
+    }
+
     try {
         const formData = new FormData();
         formData.append('file', file);
+        formData.append('documentName', docName);
 
         const response = await fetch('/api/upload-image', {
             method: 'POST',

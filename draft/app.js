@@ -21,6 +21,7 @@ const state = {
 const editor = document.getElementById('editor');
 const preview = document.getElementById('preview');
 const documentName = document.getElementById('documentName');
+const documentDescription = document.getElementById('documentDescription');
 const commandPalette = document.getElementById('commandPalette');
 const resultModal = document.getElementById('resultModal');
 const selectionPreview = document.querySelector('#selectionPreview > div');
@@ -355,16 +356,14 @@ function updatePreview() {
         
         // Parse markdown and render HTML
         let html = marked.parse(markdownText);
-        
+
         // Convert relative image paths to Flask-served paths for preview
-        const docName = documentName.value.trim();
-        if (docName) {
-            html = html.replace(
-                /src="([^"\/]+\.(png|jpg|jpeg|gif|webp))"/g, 
-                `src="/images/${encodeURIComponent(docName)}/$1"`
-            );
-        }
-        
+        // Images are stored in shared images/ folder
+        html = html.replace(
+            /src="images\/([^"]+\.(png|jpg|jpeg|gif|webp))"/g,
+            `src="/images/$1"`
+        );
+
         preview.innerHTML = html;
         if (window.renderMathInElement) {
             renderMathInElement(preview, {
@@ -437,68 +436,44 @@ function setupDragAndDrop() {
 }
 
 async function uploadImage(file) {
-    const docName = documentName.value.trim();
-    if (!docName) {
-        alert('Please enter a document name before uploading images');
-        return;
-    }
-    
     try {
         const formData = new FormData();
         formData.append('file', file);
-        formData.append('documentName', docName);
-        
+
         const response = await fetch('/api/upload-image', {
             method: 'POST',
             body: formData
         });
-        
+
         if (!response.ok) {
             const error = await response.json();
             throw new Error(error.error || 'Upload failed');
         }
-        
+
         const result = await response.json();
         console.log('Upload result:', result);
-        console.log('Markdown to insert:', result.markdown);
-        console.log('Type of markdown:', typeof result.markdown);
-        console.log('First 100 chars:', result.markdown.substring(0, 100));
-        
+
         // Save undo state before modifying editor content
         saveUndoState();
-        
-        // Insert figure markdown at cursor position
+
+        // Insert markdown image at cursor position
         const cursorPos = editor.selectionStart;
         const textBefore = editor.value.substring(0, cursorPos);
         const textAfter = editor.value.substring(cursorPos);
-        
+
         const newText = textBefore + result.markdown + '\n\n' + textAfter;
         editor.value = newText;
-        
-        console.log('Editor content after insert:', editor.value);
-        
-        // Update preview immediately to see the figure
+
+        // Update preview immediately
         updatePreview();
-        
-        // Find and select the caption placeholder for easy editing
-        const captionPlaceholder = 'ADD_CAPTION_HERE';
-        const captionStart = newText.indexOf(captionPlaceholder, cursorPos);
-        
-        if (captionStart !== -1) {
-            // Focus editor and select the placeholder text so user can type caption immediately
-            editor.focus();
-            editor.setSelectionRange(captionStart, captionStart + captionPlaceholder.length);
-            console.log(`Selected "${captionPlaceholder}" at position ${captionStart}-${captionStart + captionPlaceholder.length}`);
-        } else {
-            // Fallback: position cursor after the figure
-            const newCursorPos = cursorPos + result.markdown.length + 2;
-            editor.focus();
-            editor.setSelectionRange(newCursorPos, newCursorPos);
-            console.log(`Caption placeholder not found, positioned cursor at ${newCursorPos}`);
-        }
-        
+
+        // Position cursor after the image markdown
+        const newCursorPos = cursorPos + result.markdown.length + 2;
+        editor.focus();
+        editor.setSelectionRange(newCursorPos, newCursorPos);
+
         console.log('Image uploaded:', result.filename);
-        
+
     } catch (error) {
         console.error('Upload error:', error);
         alert(`Failed to upload image: ${error.message}`);
@@ -610,26 +585,27 @@ function performUndo() {
 
 async function saveDocument() {
     const docName = documentName.value.trim();
+    const description = documentDescription.value.trim();
     const content = editor.value;
-    
+
     if (!docName) {
         alert('Please enter a document name before saving');
         return;
     }
-    
+
     if (!content.trim()) {
         alert('Document is empty - nothing to save');
         return;
     }
-    
+
     try {
         // Update button to show saving state
         const renderBtn = document.getElementById('renderBtn');
-        renderBtn.textContent = '💾 Saving...';
+        renderBtn.textContent = 'Saving...';
         renderBtn.disabled = true;
         renderBtn.style.backgroundColor = '#f59e0b';
         renderBtn.style.color = 'white';
-        
+
         const response = await fetch('/api/save-document', {
             method: 'POST',
             headers: {
@@ -637,6 +613,7 @@ async function saveDocument() {
             },
             body: JSON.stringify({
                 documentName: docName,
+                description: description,
                 content: content
             })
         });

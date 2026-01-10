@@ -41,36 +41,32 @@ def app_js():
     package_dir = Path(__file__).parent
     return send_from_directory(str(package_dir), 'app.js')
 
-@app.route('/images/<document_name>/<filename>')
-def serve_image(document_name, filename):
-    """Serve images from document folders"""
+@app.route('/images/<filename>')
+def serve_image(filename):
+    """Serve images from shared images folder"""
     try:
-        logger.info(f"Image request: {document_name}/{filename}")
-        
-        # Validate document name
-        sanitized_name = sanitize_document_name(document_name)
-        if not sanitized_name:
-            logger.error(f"Invalid document name: {document_name}")
-            return "Invalid document name", 400
-        
-        # Get document folder
-        doc_folder = get_document_folder(document_name)
-        logger.info(f"Looking for image in: {doc_folder}")
-        
-        if not doc_folder.exists():
-            logger.error(f"Document folder not found: {doc_folder}")
-            return "Document folder not found", 404
-        
+        logger.info(f"Image request: {filename}")
+
+        # Get write folder
+        write_folder = app.config.get('WRITE_FOLDER')
+        if not write_folder:
+            logger.error("Write folder not configured")
+            return "Server not configured", 500
+
+        images_folder = write_folder / "images"
+        if not images_folder.exists():
+            logger.error(f"Images folder not found: {images_folder}")
+            return "Images folder not found", 404
+
         # Check if file exists
-        file_path = doc_folder / filename
+        file_path = images_folder / filename
         if not file_path.exists():
             logger.error(f"Image file not found: {file_path}")
             return "Image file not found", 404
-        
+
         logger.info(f"Serving image: {file_path}")
-        # Serve the image file
-        return send_from_directory(str(doc_folder), filename)
-        
+        return send_from_directory(str(images_folder), filename)
+
     except Exception as e:
         logger.error(f"Error serving image: {e}")
         return "Image not found", 404
@@ -99,7 +95,7 @@ def process_text():
         full_prompt = build_prompt(text, prompt, context_before, context_after)
         
         # Use LLM to process the text
-        model_name = app.config.get('MODEL_NAME', 'gpt-3.5-turbo')
+        model_name = app.config.get('MODEL_NAME', 'gemini-3-flash-preview')
         model = llm.get_model(model_name)
         response = model.prompt(full_prompt)
         
@@ -192,7 +188,7 @@ def health_check():
     """Health check endpoint"""
     try:
         # Test that llm is working
-        model_name = app.config.get('MODEL_NAME', 'gpt-3.5-turbo')
+        model_name = app.config.get('MODEL_NAME', 'gemini-3-flash-preview')
         model = llm.get_model(model_name)
         return jsonify({
             'status': 'healthy',
@@ -238,23 +234,12 @@ def sanitize_document_name(name: str) -> str:
     
     return sanitized if sanitized else None
 
-def get_document_folder(document_name: str) -> Path:
-    """Get the folder path for a document"""
-    write_folder = app.config.get('WRITE_FOLDER')
-    if not write_folder:
-        raise ValueError("Write folder not configured")
-    
-    sanitized_name = sanitize_document_name(document_name)
-    if not sanitized_name:
-        raise ValueError("Invalid document name")
-    
-    return write_folder / sanitized_name
-
-def create_frontmatter_content(title: str, content: str) -> str:
-    """Create markdown content with frontmatter"""
+def create_frontmatter_content(title: str, content: str, description: str = "") -> str:
+    """Create Quarto-compatible content with frontmatter"""
     today = datetime.now().date().isoformat()
     frontmatter = f"""---
 title: "{title}"
+description: "{description}"
 date: {today}
 ---
 
@@ -292,76 +277,58 @@ def validate_document_name():
 
 @app.route('/api/upload-image', methods=['POST'])
 def upload_image():
-    """Upload image and return markdown syntax"""
+    """Upload image to shared images folder and return markdown syntax"""
     try:
         logger.info(f"Upload request received - Content-Type: {request.content_type}")
-        logger.info(f"Form data: {list(request.form.keys())}")
         logger.info(f"Files: {list(request.files.keys())}")
-        
-        # Check if document name is provided
-        document_name = request.form.get('documentName', '').strip()
-        logger.info(f"Document name: '{document_name}'")
-        if not document_name:
-            return jsonify({'error': 'Document name is required'}), 400
-        
-        # Validate document name
-        sanitized_name = sanitize_document_name(document_name)
-        logger.info(f"Sanitized name: '{sanitized_name}'")
-        if not sanitized_name:
-            return jsonify({'error': 'Invalid document name'}), 400
-        
+
         # Check if file is present
         if 'file' not in request.files:
             return jsonify({'error': 'No file provided'}), 400
-        
+
         file = request.files['file']
         logger.info(f"File received: {file.filename}, Content-Type: {file.content_type}")
         if file.filename == '':
             return jsonify({'error': 'No file selected'}), 400
-        
+
         # Validate file type
         allowed_extensions = {'.png', '.jpg', '.jpeg', '.gif', '.webp'}
         file_ext = Path(file.filename).suffix.lower()
         logger.info(f"File extension: '{file_ext}'")
         if file_ext not in allowed_extensions:
             return jsonify({'error': f'Unsupported file type: {file_ext}'}), 400
-        
-        # Get document folder and create if needed
-        doc_folder = get_document_folder(document_name)
-        logger.info(f"Document folder: {doc_folder}")
-        doc_folder.mkdir(parents=True, exist_ok=True)
-        
+
+        # Get write folder and create images subfolder
+        write_folder = app.config.get('WRITE_FOLDER')
+        if not write_folder:
+            return jsonify({'error': 'Write folder not configured'}), 500
+
+        images_folder = write_folder / "images"
+        images_folder.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Images folder: {images_folder}")
+
         # Generate unique filename with UUID
         unique_filename = f"{uuid.uuid4()}{file_ext}"
-        file_path = doc_folder / unique_filename
+        file_path = images_folder / unique_filename
         logger.info(f"Saving to: {file_path}")
-        
+
         # Save the file
         file.save(str(file_path))
         logger.info(f"Successfully saved image: {file_path}")
-        
-        try:
-            # Create figure with caption placeholder using relative path for downstream blog
-            # Images are in the same folder as the markdown file
-            figure_markdown = f"""<figure>
-    <img src="{unique_filename}" alt="Uploaded image" />
-    <figcaption>ADD_CAPTION_HERE</figcaption>
-</figure>"""
-            logger.info(f"Generated figure markdown: {figure_markdown}")
-            
-            response_data = {
-                'success': True,
-                'filename': unique_filename,
-                'markdown': figure_markdown,
-                'path': str(file_path),
-                'document_name': sanitized_name
-            }
-            logger.info(f"Returning response: {response_data}")
-            return jsonify(response_data)
-        except Exception as e:
-            logger.error(f"Error creating response: {e}")
-            raise
-        
+
+        # Return standard markdown image syntax
+        image_markdown = f"![](images/{unique_filename})"
+        logger.info(f"Generated markdown: {image_markdown}")
+
+        response_data = {
+            'success': True,
+            'filename': unique_filename,
+            'markdown': image_markdown,
+            'path': str(file_path)
+        }
+        logger.info(f"Returning response: {response_data}")
+        return jsonify(response_data)
+
     except Exception as e:
         logger.error(f"Error uploading image: {e}")
         logger.error(f"Exception type: {type(e)}")
@@ -371,33 +338,40 @@ def upload_image():
 
 @app.route('/api/save-document', methods=['POST'])
 def save_document():
-    """Save document with frontmatter"""
+    """Save document as flat .qmd file with frontmatter"""
     try:
         data = request.get_json()
         document_name = data.get('documentName', '').strip()
         content = data.get('content', '')
-        
+        description = data.get('description', '').strip()
+
         if not document_name:
             return jsonify({'error': 'Document name is required'}), 400
-        
-        # Validate and get document folder
-        doc_folder = get_document_folder(document_name)
-        doc_folder.mkdir(parents=True, exist_ok=True)
-        
-        # Create markdown file with frontmatter - always save as index.md
-        markdown_content = create_frontmatter_content(document_name, content)
-        file_path = doc_folder / "index.md"
-        
+
+        # Validate document name
+        sanitized_name = sanitize_document_name(document_name)
+        if not sanitized_name:
+            return jsonify({'error': 'Invalid document name'}), 400
+
+        # Get write folder
+        write_folder = app.config.get('WRITE_FOLDER')
+        if not write_folder:
+            return jsonify({'error': 'Write folder not configured'}), 500
+
+        # Create Quarto file with frontmatter - save as flat .qmd file
+        markdown_content = create_frontmatter_content(document_name, content, description)
+        file_path = write_folder / f"{sanitized_name}.qmd"
+
         file_path.write_text(markdown_content, encoding='utf-8')
-        
+
         logger.info(f"Saved document: {file_path}")
-        
+
         return jsonify({
             'success': True,
             'path': str(file_path),
-            'folder': str(doc_folder)
+            'filename': f"{sanitized_name}.qmd"
         })
-        
+
     except Exception as e:
         logger.error(f"Error saving document: {e}")
         return jsonify({'error': 'Save failed'}), 500
@@ -425,10 +399,10 @@ def serve(
         help="Path to markdown file containing system prompt"
     ),
     model: str = typer.Option(
-        "gpt-3.5-turbo",
+        "gemini-3-flash-preview",
         "--model",
         "-m",
-        help="LLM model to use (e.g., gpt-3.5-turbo, gpt-4, claude-3-opus)"
+        help="LLM model to use (e.g., gemini-3-flash-preview, gpt-4, claude-3-opus)"
     ),
     host: str = typer.Option("127.0.0.1", "--host", help="Host to bind to"),
     port: int = typer.Option(5000, "--port", help="Port to bind to"),
@@ -478,7 +452,7 @@ def serve(
     print(f"\nWrite folder: {app.config['WRITE_FOLDER']}")
     print(f"Model: {app.config['MODEL_NAME']}")
     print("\nMake sure to set up your API keys:")
-    print("  export OPENAI_API_KEY=your_key_here")
+    print("  export GEMINI_API_KEY=your_key_here")
     print("  or configure other models with: llm install llm-claude-3")
     
     if app.config.get('SYSTEM_PROMPT'):

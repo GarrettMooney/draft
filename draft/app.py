@@ -1,9 +1,10 @@
 # /// script
-# requires-python = ">=3.8"
+# requires-python = ">=3.10"
 # dependencies = [
 #     "flask>=3.0.0",
 #     "flask-cors>=4.0.0",
 #     "llm>=0.13.1",
+#     "llm-gemini>=0.28",
 #     "typer>=0.9.0",
 # ]
 # ///
@@ -418,10 +419,10 @@ def serve(
         help="Path to markdown file containing system prompt"
     ),
     model: str = typer.Option(
-        "gemini-3-flash-preview",
+        "gemini-2.0-flash",
         "--model",
         "-m",
-        help="LLM model to use (e.g., gemini-3-flash-preview, gpt-4, claude-3-opus)"
+        help="LLM model to use (e.g., gemini-2.0-flash, gpt-4o, claude-3-opus)"
     ),
     host: str = typer.Option("127.0.0.1", "--host", help="Host to bind to"),
     port: int = typer.Option(5000, "--port", help="Port to bind to"),
@@ -471,8 +472,8 @@ def serve(
     print(f"\nWrite folder: {app.config['WRITE_FOLDER']}")
     print(f"Model: {app.config['MODEL_NAME']}")
     print("\nMake sure to set up your API keys:")
-    print("  export GEMINI_API_KEY=your_key_here")
-    print("  or configure other models with: llm install llm-claude-3")
+    print("  export LLM_GEMINI_KEY=your_key_here")
+    print("  or configure via: llm keys set gemini")
     
     if app.config.get('SYSTEM_PROMPT'):
         system_prompt_preview = app.config['SYSTEM_PROMPT']

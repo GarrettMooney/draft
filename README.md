@@ -14,26 +14,28 @@ uvx --with git+https://github.com/koaning/draft draft --help
 ### Setup API Keys
 
 ```bash
-# For OpenAI (recommended)
-export OPENAI_API_KEY="your-key-here"
+# For Gemini (default)
+export LLM_GEMINI_KEY="your-key-here"
+# Or configure via: llm keys set gemini
 
-# Or install other LLM providers
-uv run llm install llm-claude-3
+# For OpenAI
+export OPENAI_API_KEY="your-key-here"
 ```
 
 ### Launch the Editor
 
 ```bash
 # Basic usage
-draft serve --write-folder ./my-documents
+draft --write-folder ./my-documents
 
 # With custom system prompt
-draft serve --write-folder ./blog-posts --system-prompt ./prompts/blog-writer.md
+draft --write-folder ./blog-posts --system-prompt ./prompts/blog-writer.md
 
 # Advanced options
-draft serve \
+draft \
   --write-folder ./content \
   --system-prompt ./prompts/technical-writer.md \
+  --model gemini-2.0-flash \
   --host 0.0.0.0 \
   --port 8080 \
   --debug
@@ -71,19 +73,19 @@ After selecting text and pressing `Cmd+Enter`, try prompts like:
 
 ## 📁 File Structure
 
-Draft creates a clean, blog-ready structure:
+Draft creates a clean, Quarto blog-ready structure:
 
 ```
 my-documents/
 ├── my-first-post/
-│   ├── index.md           # Main content with frontmatter
-│   ├── hero-image.png     # Uploaded images
+│   ├── index.qmd          # Main content with frontmatter
+│   ├── hero-image.png     # Uploaded images (UUID-named)
 │   └── diagram.jpg
 ├── another-article/
-│   ├── index.md
+│   ├── index.qmd
 │   └── screenshot.png
 └── documentation/
-    ├── index.md
+    ├── index.qmd
     ├── architecture.png
     └── flowchart.svg
 ```
@@ -93,39 +95,46 @@ my-documents/
 ```markdown
 ---
 title: "My Blog Post"
-date: "2024-01-15T10:30:00Z"
+description: "A brief description"
+date: 2024-01-15
 ---
 
 # Your content here
 
-<figure>
-    <img src="hero-image.png" alt="Uploaded image" />
-    <figcaption>Your image caption</figcaption>
-</figure>
+![](hero-image.png)
 ```
 
 ## 🤝 LLM Providers
 
 Draft uses [Simon Willison's LLM library](https://llm.datasette.io/), supporting many providers:
 
-### OpenAI (Default)
+### Google Gemini (Default)
+```bash
+export LLM_GEMINI_KEY="your-key"
+# Or configure via: llm keys set gemini
+```
+
+### OpenAI
 ```bash
 export OPENAI_API_KEY="your-key"
+draft --write-folder ./docs --model gpt-4o
 ```
 
 ### Anthropic Claude
 ```bash
-uv run llm install llm-claude-3
+llm install llm-claude-3
 export ANTHROPIC_API_KEY="your-key"
+draft --write-folder ./docs --model claude-3-opus
 ```
 
-### Local Models
+### Local Models (Ollama)
 ```bash
-uv run llm install llm-gpt4all
+llm install llm-ollama
+draft --write-folder ./docs --model ollama/llama3
 ```
 
 ### List Available Models
 ```bash
-uv run llm models
+llm models
 ```
 

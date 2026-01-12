@@ -7,7 +7,7 @@ authors = [
 ]
 readme = "README.md"
 license = {text = "MIT"}
-requires-python = ">=3.8.1"
+requires-python = ">=3.10"
 keywords = ["markdown", "editor", "ai", "writing", "blog"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -15,11 +15,10 @@ classifiers = [
     "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Text Processing :: Markup",
     "Topic :: Software Development :: Documentation",
     "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
@@ -27,8 +26,9 @@ classifiers = [
 
 dependencies = [
     "flask>=3.0.0",
-    "flask-cors>=4.0.0", 
+    "flask-cors>=4.0.0",
     "llm>=0.13.1",
+    "llm-gemini>=0.28",
     "typer>=0.9.0"
 ]
 

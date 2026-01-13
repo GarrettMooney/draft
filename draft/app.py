@@ -419,10 +419,10 @@ def serve(
         help="Path to markdown file containing system prompt"
     ),
     model: str = typer.Option(
-        "gemini-2.0-flash",
+        "gemini-3-flash-preview",
         "--model",
         "-m",
-        help="LLM model to use (e.g., gemini-2.0-flash, gpt-4o, claude-3-opus)"
+        help="LLM model to use (e.g., gemini-3-flash-preview, gpt-4o, claude-3-opus)"
     ),
     host: str = typer.Option("127.0.0.1", "--host", help="Host to bind to"),
     port: int = typer.Option(5000, "--port", help="Port to bind to"),

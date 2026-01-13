@@ -35,7 +35,7 @@ draft --write-folder ./blog-posts --system-prompt ./prompts/blog-writer.md
 draft \
   --write-folder ./content \
   --system-prompt ./prompts/technical-writer.md \
-  --model gemini-2.0-flash \
+  --model gemini-3-flash-preview \
   --host 0.0.0.0 \
   --port 8080 \
   --debug
